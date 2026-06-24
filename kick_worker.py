@@ -1,22 +1,34 @@
-import asyncio
-import requests
+import time
+from datetime import datetime
 
-async def kick_worker_async(app):
+def is_expired(kick_date_str):
+    try:
+        if not kick_date_str:
+            return False
 
+        kick_date = datetime.strptime(kick_date_str, "%Y-%m-%d %H:%M")
+        now = datetime.now()
+
+        return now >= kick_date
+    except:
+        return False
+
+
+def kick_worker_loop(app):
     while True:
         try:
             r = requests.get(APPS_SCRIPT_URL, timeout=30)
             data = r.json().get("data", [])
 
             print("━━━━━━━━━━━━━━")
-            print("CHECKING KICK DATA...")
+            print("CHECKING SHEET DATA...")
 
             for u in data:
                 user_id = u.get("userId")
                 kick_date = u.get("kickDate")
                 out = u.get("out")
 
-                print("CHECK:", user_id, kick_date, out)
+                print("CHECK:", user_id, kick_date)
 
                 if not user_id:
                     continue
@@ -24,20 +36,20 @@ async def kick_worker_async(app):
                 if out == "✔":
                     continue
 
+                # 🔥 INI LOGIC KICK
                 if is_expired(kick_date):
 
                     try:
-                        print("🔥 KICK:", user_id)
+                        print("🔥 KICKING:", user_id)
 
-                        # ✔ PAKAI app.bot (INI WAJIB)
-                        await app.bot.ban_chat_member(
+                        app.bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
                             user_id=int(user_id)
                         )
 
-                        await app.bot.send_message(
+                        app.bot.send_message(
                             chat_id=int(user_id),
-                            text=f"❌ Membership habis.\n👉 Start lagi: {REDIRECT_LINK}"
+                            text=f"❌ Membership kamu habis.\n👉 Start lagi: {REDIRECT_LINK}"
                         )
 
                         print("🔥 KICKED:", user_id)
@@ -48,4 +60,4 @@ async def kick_worker_async(app):
         except Exception as e:
             print("❌ LOOP ERROR:", e)
 
-        await asyncio.sleep(60)
+        time.sleep(60)
