@@ -3,21 +3,17 @@ import re
 import time
 import threading
 import requests
+from datetime import datetime
 from telegram import Update, Bot
-from telegram.ext import (
-    Application,
-    MessageHandler,
-    CommandHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 
-MONITOR_GROUP = -1004311537613
-TARGET_GROUP = -1002510797113
+# 📌 GROUP ID (SUDAH FIX, JANGAN DIUBAH)
+MONITOR_GROUP = -1004311537613   # <- tempat baca SUCCESS JOIN
+TARGET_GROUP = -1002510797113    # <- tempat kick member
 
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
@@ -34,7 +30,7 @@ def parse_message(text):
     return {
         "username": username.group(1).strip() if username else "",
         "userId": user_id.group(1).strip() if user_id else "",
-        "paket": paket.group(1).strip() if paket else "1",
+        "paket": paket.group(1).strip() if paket else "",
         "harga": harga.group(1).strip() if harga else "",
         "referral": referral.group(1).strip() if referral else ""
     }
@@ -42,7 +38,7 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND TO SHEET:", data)
+        print("📤 SEND:", data)
 
         r = requests.post(
             APPS_SCRIPT_URL,
@@ -55,7 +51,7 @@ def send_to_sheet(data):
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= HANDLE ALL UPDATES =================
+# ================= HANDLE GROUP / CHANNEL =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
@@ -75,7 +71,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
-    # hanya monitor group / channel tertentu
+    # hanya monitor group ini
     if chat_id != MONITOR_GROUP:
         return
 
@@ -87,7 +83,6 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data["userId"]:
         return
 
-    # anti duplicate
     if data["userId"] in seen_users:
         return
 
@@ -97,13 +92,30 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     send_to_sheet(data)
 
-# ================= START =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Klik untuk lanjut:\n{REDIRECT_LINK}"
     )
 
 # ================= KICK WORKER =================
+def is_expired(kick_date):
+    if not kick_date:
+        return False
+
+    now = datetime.now()
+
+    try:
+        if ":" in kick_date:
+            dt = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
+            return now >= dt
+        else:
+            dt = datetime.strptime(kick_date, "%Y-%m-%d")
+            return now.date() >= dt.date()
+    except:
+        return False
+
+
 def kick_worker():
     bot = Bot(token=BOT_TOKEN)
 
@@ -112,22 +124,39 @@ def kick_worker():
             r = requests.get(APPS_SCRIPT_URL, timeout=30)
             data = r.json().get("data", [])
 
-            today = time.strftime("%Y-%m-%d")
+            print("━━━━━━━━━━━━━━")
+            print("CHECKING KICK DATA...")
 
             for u in data:
-                if u.get("kickDate") == today and u.get("out") != "✔":
+                user_id = u.get("userId")
+                kick_date = u.get("kickDate")
+                out = u.get("out")
+
+                if not user_id:
+                    continue
+
+                if out == "✔":
+                    continue
+
+                if is_expired(kick_date):
                     try:
                         bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
-                            user_id=int(u["userId"])
+                            user_id=int(user_id)
                         )
 
                         bot.send_message(
-                            chat_id=u["userId"],
-                            text=f"Langganan kamu sudah habis.\nStart lagi: {REDIRECT_LINK}"
+                            chat_id=user_id,
+                            text=f"❌ Langganan kamu sudah habis.\n🔗 Start: {REDIRECT_LINK}"
                         )
 
-                        print("KICKED:", u["userId"])
+                        # optional mark out
+                        requests.post(APPS_SCRIPT_URL, json={
+                            "action": "markOut",
+                            "userId": user_id
+                        }, timeout=10)
+
+                        print("KICKED:", user_id)
 
                     except Exception as e:
                         print("KICK ERROR:", e)
@@ -135,13 +164,13 @@ def kick_worker():
         except Exception as e:
             print("KICK LOOP ERROR:", e)
 
-        time.sleep(3600)
+        time.sleep(60)
 
 # ================= RUN =================
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # 🔥 FIX UTAMA: tangkap SEMUA update penting
+    # 📌 MONITOR SEMUA UPDATE (GROUP + CHANNEL + BOT MSG)
     app.add_handler(MessageHandler(filters.ALL, handle_group))
 
     app.add_handler(CommandHandler("start", start))
@@ -151,6 +180,7 @@ def run():
     threading.Thread(target=kick_worker, daemon=True).start()
 
     app.run_polling(drop_pending_updates=True)
+
 
 if __name__ == "__main__":
     run()
