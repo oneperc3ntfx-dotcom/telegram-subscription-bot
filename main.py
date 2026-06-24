@@ -74,8 +74,21 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
+    # kirim ke sheet
     send_to_sheet(data)
 
+    # ================= UNBAN (IMPORTANT FOR RENEW) =================
+    try:
+        await context.bot.unban_chat_member(
+            chat_id=TARGET_GROUP,
+            user_id=int(data["userId"]),
+            only_if_banned=True
+        )
+        print("♻️ UNBAN SUCCESS:", data["userId"])
+    except Exception as e:
+        print("UNBAN ERROR:", e)
+
+    # ================= INSTANT KICK (optional logic lama) =================
     try:
         print("🔥 INSTANT KICK CHECK:", data["userId"])
 
@@ -100,8 +113,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚀 Bot Active\n{REDIRECT_LINK}"
     )
 
+# ================= EXPIRY CHECK =================
+def is_expired(kick_date_str):
+    try:
+        if not kick_date_str:
+            return False
+
+        try:
+            kd = datetime.fromisoformat(
+                kick_date_str.replace("Z", "+00:00")
+            )
+        except:
+            kd = datetime.strptime(
+                kick_date_str,
+                "%Y-%m-%d %H:%M"
+            )
+            kd = kd.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+
+        return now >= kd
+
+    except Exception as e:
+        print("PARSE ERROR:", e)
+        return False
+
 # ================= WORKER LOOP =================
-def kick_worker_loop():
+def kick_worker_loop(app):
     while True:
         try:
             r = requests.get(APPS_SCRIPT_URL, timeout=30)
@@ -123,48 +161,29 @@ def kick_worker_loop():
                 if out == "✔":
                     continue
 
-                try:
-                    if kick_date:
+                if is_expired(kick_date):
 
-                        kd = None
+                    try:
+                        print("🔥 AUTO KICK:", user_id)
 
-                        # ================= DATE PARSER FIX =================
-                        try:
-                            # ISO format dari Google Sheets
-                            kd = datetime.fromisoformat(
-                                kick_date.replace("Z", "+00:00")
-                            )
-                        except:
-                            # format lama fallback
-                            kd = datetime.strptime(
-                                kick_date,
-                                "%Y-%m-%d %H:%M"
-                            )
+                        res = app.bot.ban_chat_member(
+                            chat_id=TARGET_GROUP,
+                            user_id=int(user_id)
+                        )
 
-                        now = datetime.now(timezone.utc)
+                        print("TELEGRAM RESULT:", res)
 
-                        print("NOW:", now)
-                        print("KICK:", kd)
-                        print("EXPIRED:", now >= kd)
+                        app.bot.send_message(
+                            chat_id=int(user_id),
+                            text=f"❌ Membership kamu sudah habis.\n👉 Start lagi: {REDIRECT_LINK}"
+                        )
 
-                        if now >= kd:
+                        print("🔥 KICKED:", user_id)
 
-                            print("🔥 AUTO KICK:", user_id)
+                        # NOTE: idealnya update sheet out = ✔ di sini (opsional upgrade)
 
-                            res = requests.post(
-                                f"https://api.telegram.org/bot{BOT_TOKEN}/banChatMember",
-                                json={
-                                    "chat_id": TARGET_GROUP,
-                                    "user_id": int(user_id)
-                                },
-                                timeout=30
-                            )
-
-                            print("TELEGRAM STATUS:", res.status_code)
-                            print("TELEGRAM RESPONSE:", res.text)
-
-                except Exception as e:
-                    print("❌ DATE PARSE ERROR:", e)
+                    except Exception as e:
+                        print("❌ KICK ERROR:", e)
 
         except Exception as e:
             print("❌ LOOP ERROR:", e)
@@ -180,7 +199,7 @@ def main():
 
     print("BOT RUNNING")
 
-    threading.Thread(target=kick_worker_loop, daemon=True).start()
+    threading.Thread(target=kick_worker_loop, args=(app,), daemon=True).start()
 
     app.run_polling()
 
