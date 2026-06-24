@@ -1,21 +1,14 @@
-# Telegram Subscription Bot (Apps Script Version)
+# Telegram Subscription Bot
 
-## Features
-- Auto capture group messages
-- Admin-only data processing
-- Google Sheets storage
-- Auto kick expired users
-- Auto message after expiration
-- Non-admin redirect system
+## Flow System
+Telegram → Railway Bot → Apps Script → Google Sheets → Auto Kick
 
 ## Setup
+1. Deploy ke Railway
+2. Set BOT_TOKEN di config.js
+3. Set webhook Telegram:
+   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR-RAILWAY-URL/webhook
 
-1. Deploy Apps Script as Web App
-2. Set webhook:
-https://api.telegram.org/bot<TOKEN>/setWebhook?url=<WEB_APP_URL>
-
-3. Set triggers:
-- checkKick → daily 00:00
-
-## Sheet Structure
-Username | UserID | Paket | Harga | Durasi | Kick Date | Referral | OUT
+## Requirement
+- Apps Script Web App harus aktif
+- Sheet name: DATA
