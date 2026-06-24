@@ -15,7 +15,6 @@ TARGET_GROUP = -1002510797113
 
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
-# ================= ANTI DUPLICATE =================
 seen_users = set()
 
 # ================= PARSER =================
@@ -37,7 +36,7 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND:", data)
+        print("📤 SEND TO SHEET:", data)
 
         r = requests.post(
             APPS_SCRIPT_URL,
@@ -45,20 +44,25 @@ def send_to_sheet(data):
             timeout=30
         )
 
-        print("📊 STATUS:", r.status_code)
-        print("📊 RESPONSE:", r.text)
+        print("📊 RESPONSE:", r.status_code, r.text)
 
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= HANDLER =================
+# ================= HANDLE GROUP =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.effective_message
+    print("🔔 UPDATE RECEIVED")
+
+    msg = update.message or update.effective_message
     if not msg:
         return
 
-    chat_id = update.effective_chat.id
-    text = msg.text or ""
+    chat_id = msg.chat_id
+    text = msg.text or msg.caption or ""
+
+    print("━━━━━━━━━━━━━━")
+    print("CHAT ID:", chat_id)
+    print("TEXT:\n", text)
 
     if chat_id != MONITOR_GROUP:
         return
@@ -68,7 +72,9 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = parse_message(text)
 
-    # 🔥 ANTI DUPLICATE
+    if not data["userId"]:
+        return
+
     if data["userId"] in seen_users:
         return
 
@@ -105,7 +111,7 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=u["userId"],
-                            text=f"Langganan kamu habis.\nStart ulang: {REDIRECT_LINK}"
+                            text=f"Langganan kamu sudah habis.\nStart lagi: {REDIRECT_LINK}"
                         )
 
                         print("KICKED:", u["userId"])
@@ -122,7 +128,9 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.ALL, handle_group))
+    # 🔥 IMPORTANT: capture ALL group messages
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS, handle_group))
+
     app.add_handler(CommandHandler("start", start))
 
     print("BOT RUNNING")
