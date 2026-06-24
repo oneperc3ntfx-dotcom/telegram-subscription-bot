@@ -3,7 +3,7 @@ import re
 import time
 import requests
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
@@ -58,11 +58,9 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
-    # hanya monitor group
     if chat_id != MONITOR_GROUP:
         return
 
-    # filter message
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -76,24 +74,22 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
-    # ================= SEND TO SHEET =================
     send_to_sheet(data)
 
-    # ================= INSTANT KICK (MASIH PAKAI LOGIC LAMA) =================
     try:
-        print("🔥 CHECK KICK:", data["userId"])
+        print("🔥 INSTANT KICK CHECK:", data["userId"])
 
-        context.bot.ban_chat_member(
+        await context.bot.ban_chat_member(
             chat_id=TARGET_GROUP,
             user_id=int(data["userId"])
         )
 
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=int(data["userId"]),
             text=f"❌ Kamu sudah dikeluarkan dari grup.\n👉 Start lagi: {REDIRECT_LINK}"
         )
 
-        print("🔥 KICKED:", data["userId"])
+        print("🔥 INSTANT KICKED:", data["userId"])
 
     except Exception as e:
         print("❌ KICK ERROR:", e)
@@ -104,7 +100,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚀 Bot Active\n{REDIRECT_LINK}"
     )
 
-# ================= OPTIONAL LOOP CHECK (TETAP ADA, TIDAK MENGUBAH LOGIC) =================
+# ================= WORKER LOOP =================
 def kick_worker_loop():
     while True:
         try:
@@ -121,7 +117,6 @@ def kick_worker_loop():
 
                 print("CHECK:", user_id, kick_date)
 
-                # tetap pakai logic lama (subscription)
                 if not user_id:
                     continue
 
@@ -130,28 +125,46 @@ def kick_worker_loop():
 
                 try:
                     if kick_date:
+
+                        kd = None
+
+                        # ================= DATE PARSER FIX =================
                         try:
-                            kd = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
-                            if datetime.now() >= kd:
+                            # ISO format dari Google Sheets
+                            kd = datetime.fromisoformat(
+                                kick_date.replace("Z", "+00:00")
+                            )
+                        except:
+                            # format lama fallback
+                            kd = datetime.strptime(
+                                kick_date,
+                                "%Y-%m-%d %H:%M"
+                            )
 
-                                print("🔥 AUTO KICK:", user_id)
+                        now = datetime.now(timezone.utc)
 
-                                # safe call (sync style via requests bot wrapper)
-                                requests.post(
-                                    f"https://api.telegram.org/bot{BOT_TOKEN}/banChatMember",
-                                    json={
-                                        "chat_id": TARGET_GROUP,
-                                        "user_id": int(user_id)
-                                    }
-                                )
+                        print("NOW:", now)
+                        print("KICK:", kd)
+                        print("EXPIRED:", now >= kd)
 
-                                print("🔥 KICKED:", user_id)
+                        if now >= kd:
 
-                        except Exception as e:
-                            print("❌ DATE PARSE ERROR:", e)
+                            print("🔥 AUTO KICK:", user_id)
+
+                            res = requests.post(
+                                f"https://api.telegram.org/bot{BOT_TOKEN}/banChatMember",
+                                json={
+                                    "chat_id": TARGET_GROUP,
+                                    "user_id": int(user_id)
+                                },
+                                timeout=30
+                            )
+
+                            print("TELEGRAM STATUS:", res.status_code)
+                            print("TELEGRAM RESPONSE:", res.text)
 
                 except Exception as e:
-                    print("❌ LOOP ITEM ERROR:", e)
+                    print("❌ DATE PARSE ERROR:", e)
 
         except Exception as e:
             print("❌ LOOP ERROR:", e)
@@ -167,7 +180,6 @@ def main():
 
     print("BOT RUNNING")
 
-    # worker tetap jalan (tidak ganggu bot)
     threading.Thread(target=kick_worker_loop, daemon=True).start()
 
     app.run_polling()
