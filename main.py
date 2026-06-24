@@ -3,16 +3,11 @@ import re
 import time
 import requests
 import threading
+import asyncio
 from datetime import datetime, timezone
 
 from telegram import Update
-from telegram.ext import (
-    Application,
-    MessageHandler,
-    CommandHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -25,7 +20,7 @@ REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 seen_users = set()
 
-# ================= MESSAGE PARSER =================
+# ================= PARSER =================
 def parse_message(text):
     username = re.search(r"Username:\s*(.+)", text)
     user_id = re.search(r"User ID:\s*(\d+)", text)
@@ -45,7 +40,7 @@ def parse_message(text):
 def send_to_sheet(data):
     try:
         print("📤 SEND TO SHEET:", data)
-        r = requests.post(APPS_SCRIPT_URL, json=data, timeout=30)
+        r = requests.post(APPS_SCRIPT_URL, json=data, timeout=60)
         print("📊 RESPONSE:", r.status_code, r.text)
     except Exception as e:
         print("❌ SHEET ERROR:", e)
@@ -86,13 +81,12 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     seen_users.add(data["userId"])
 
     print("━━━━━━━━━━━━━━")
-    print("CHAT ID:", chat_id)
     print("JOIN DETECTED:", data)
 
     # SAVE TO SHEET
     send_to_sheet(data)
 
-    # UNBAN FOR RENEW SYSTEM
+    # UNBAN (ALLOW REJOIN / RENEW)
     try:
         await context.bot.unban_chat_member(
             chat_id=TARGET_GROUP,
@@ -103,7 +97,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("UNBAN ERROR:", e)
 
-# ================= START =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(follow_up_message())
 
@@ -112,7 +106,7 @@ async def catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text(follow_up_message())
 
-# ================= EXPIRY CHECK =================
+# ================= EXPIRE CHECK =================
 def is_expired(kick_date_str):
     try:
         if not kick_date_str:
@@ -134,11 +128,15 @@ def is_expired(kick_date_str):
         print("PARSE ERROR:", e)
         return False
 
-# ================= WORKER LOOP =================
+# ================= SAFE ASYNC BRIDGE =================
+def run_async(app, coro):
+    asyncio.run_coroutine_threadsafe(coro, app.loop)
+
+# ================= WORKER LOOP (SAFE) =================
 def kick_worker_loop(app):
     while True:
         try:
-            r = requests.get(APPS_SCRIPT_URL, timeout=30)
+            r = requests.get(APPS_SCRIPT_URL, timeout=60)
             data = r.json().get("data", [])
 
             print("━━━━━━━━━━━━━━")
@@ -162,14 +160,22 @@ def kick_worker_loop(app):
                     try:
                         print("🔥 AUTO KICK:", user_id)
 
-                        app.bot.ban_chat_member(
-                            chat_id=TARGET_GROUP,
-                            user_id=int(user_id)
+                        # BAN USER
+                        run_async(
+                            app,
+                            app.bot.ban_chat_member(
+                                chat_id=TARGET_GROUP,
+                                user_id=int(user_id)
+                            )
                         )
 
-                        app.bot.send_message(
-                            chat_id=int(user_id),
-                            text=follow_up_message()
+                        # FOLLOW UP MESSAGE
+                        run_async(
+                            app,
+                            app.bot.send_message(
+                                chat_id=int(user_id),
+                                text=follow_up_message()
+                            )
                         )
 
                         print("🔥 KICKED:", user_id)
@@ -182,21 +188,21 @@ def kick_worker_loop(app):
 
         time.sleep(60)
 
-# ================= MAIN (FIXED ROUTING ORDER) =================
+# ================= MAIN (ORDER FIXED) =================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     print("BOT RUNNING")
 
-    # ORDER WAJIB BENAR (INI YANG FIX BUG KAMU)
+    # ORDER HANDLER (IMPORTANT)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Chat(MONITOR_GROUP), handle_group))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, catch_all))
 
-    threading.Thread(target=kick_worker_loop, args=(app,), daemon=True).start()
+    # WORKER THREAD
+    threading.Thread(target=kick_worker_loop, args=(app), daemon=True).start()
 
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
