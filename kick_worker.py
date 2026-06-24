@@ -27,9 +27,9 @@ async def kick_worker_async(app):
                 if is_expired(kick_date):
 
                     try:
-                        print("🔥 TRY KICK:", user_id)
+                        print("🔥 KICK:", user_id)
 
-                        # 🔥 IMPORTANT: pakai app.bot (BUKAN Bot() baru)
+                        # ✔ PAKAI app.bot (INI WAJIB)
                         await app.bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
                             user_id=int(user_id)
@@ -37,13 +37,8 @@ async def kick_worker_async(app):
 
                         await app.bot.send_message(
                             chat_id=int(user_id),
-                            text=f"❌ Membership kamu habis.\n👉 Start lagi: {REDIRECT_LINK}"
+                            text=f"❌ Membership habis.\n👉 Start lagi: {REDIRECT_LINK}"
                         )
-
-                        requests.post(APPS_SCRIPT_URL, json={
-                            "action": "markOut",
-                            "userId": user_id
-                        }, timeout=10)
 
                         print("🔥 KICKED:", user_id)
 
@@ -51,6 +46,6 @@ async def kick_worker_async(app):
                         print("❌ KICK ERROR:", e)
 
         except Exception as e:
-            print("❌ KICK LOOP ERROR:", e)
+            print("❌ LOOP ERROR:", e)
 
         await asyncio.sleep(60)
