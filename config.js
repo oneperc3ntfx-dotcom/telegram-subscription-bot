@@ -3,9 +3,7 @@ export const CONFIG = {
 
   ADMINS: [1305881282],
 
-  GROUP_MONITOR: "-1004415837135",
-  GROUP_KICK: "-1002510797113",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyDWhOFRO8T0PL2nZOzYAv0KaXIZxBAYfmBN0rVbuyNOGni6M84tdec-jp0Rp3gf2Ji/exec",
 
-  // URL APPS SCRIPT KAMU
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyDWhOFRO8T0PL2nZOzYAv0KaXIZxBAYfmBN0rVbuyNOGni6M84tdec-jp0Rp3gf2Ji/exec"
+  BOT_LINK: "https://t.me/AITOOLSIGNAL_BOT?start=signal"
 };
