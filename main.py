@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import requests
+import threading
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
@@ -33,7 +34,7 @@ def parse_message(text):
         "referral": referral.group(1).strip() if referral else ""
     }
 
-# ================= SEND TO SHEET =================
+# ================= SHEET =================
 def send_to_sheet(data):
     try:
         print("📤 SEND TO SHEET:", data)
@@ -56,11 +57,9 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
-    # hanya monitor group
     if chat_id != MONITOR_GROUP:
         return
 
-    # filter pesan
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -74,7 +73,6 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
-    # kirim ke sheet
     send_to_sheet(data)
 
     # ================= INSTANT KICK =================
@@ -96,14 +94,33 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("❌ KICK ERROR:", e)
 
-# ================= START COMMAND =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Start Bot:\n{REDIRECT_LINK}"
+        f"🚀 Bot Active\n{REDIRECT_LINK}"
     )
 
-# ================= MAIN =================
-async def main():
+# ================= KICK WORKER (OPTIONAL LOOP MONITOR) =================
+def kick_worker_loop():
+    while True:
+        try:
+            r = requests.get(APPS_SCRIPT_URL, timeout=30)
+            data = r.json().get("data", [])
+
+            print("━━━━━━━━━━━━━━")
+            print("CHECKING SHEET DATA...")
+
+            for u in data:
+                print("CHECK USER:", u.get("userId"))
+
+        except Exception as e:
+            print("❌ KICK LOOP ERROR:", e)
+
+        import time
+        time.sleep(60)
+
+# ================= RUN =================
+def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(MessageHandler(filters.ALL, handle_group))
@@ -111,8 +128,11 @@ async def main():
 
     print("BOT RUNNING")
 
-    await app.run_polling()
+    # optional worker (tidak ganggu event loop)
+    threading.Thread(target=kick_worker_loop, daemon=True).start()
+
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
