@@ -3,8 +3,7 @@ import re
 import time
 import requests
 import threading
-import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
@@ -14,11 +13,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 
 MONITOR_GROUP = -1004311537613
-TARGET_GROUP = -1002510797113
-
-REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
-
-seen_users = set()
 
 # ================= PARSER =================
 def parse_message(text):
@@ -40,21 +34,11 @@ def parse_message(text):
 def send_to_sheet(data):
     try:
         print("📤 SEND TO SHEET:", data)
-        r = requests.post(APPS_SCRIPT_URL, json=data, timeout=60)
-        print("📊 RESPONSE:", r.status_code, r.text)
+        requests.post(APPS_SCRIPT_URL, json=data, timeout=30)
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= FOLLOW UP MESSAGE =================
-def follow_up_message():
-    return (
-        "🚨 AKSES ANDA SUDAH BERAKHIR / TIDAK VALID\n\n"
-        "👉 Silakan lanjutkan akses di link berikut:\n"
-        f"{REDIRECT_LINK}\n\n"
-        "⚡ Sistem akan otomatis memproses setelah pembayaran."
-    )
-
-# ================= HANDLE GROUP (MONITOR ONLY) =================
+# ================= HANDLE MONITOR GROUP =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = update.message or update.channel_post or update.edited_message
@@ -75,134 +59,85 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data["userId"]:
         return
 
-    if data["userId"] in seen_users:
-        return
-
-    seen_users.add(data["userId"])
-
     print("━━━━━━━━━━━━━━")
     print("JOIN DETECTED:", data)
 
-    # SAVE TO SHEET
+    # kirim ke sheet
     send_to_sheet(data)
 
-    # UNBAN (ALLOW REJOIN / RENEW)
-    try:
-        await context.bot.unban_chat_member(
-            chat_id=TARGET_GROUP,
-            user_id=int(data["userId"]),
-            only_if_banned=True
-        )
-        print("♻️ UNBAN SUCCESS:", data["userId"])
-    except Exception as e:
-        print("UNBAN ERROR:", e)
-
-# ================= START COMMAND =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(follow_up_message())
+    await update.message.reply_text("Bot Active")
 
-# ================= CHAT RANDOM / DM =================
-async def catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text(follow_up_message())
-
-# ================= EXPIRE CHECK =================
-def is_expired(kick_date_str):
+# ================= PARSE KICK DATE =================
+def parse_kick_date(value):
     try:
-        if not kick_date_str:
-            return False
+        if not value:
+            return None
+        return datetime.strptime(value, "%Y-%m-%d %H:%M")
+    except:
+        return None
 
-        try:
-            kd = datetime.fromisoformat(
-                kick_date_str.replace("Z", "+00:00")
-            )
-        except:
-            kd = datetime.strptime(kick_date_str, "%Y-%m-%d %H:%M")
-            kd = kd.replace(tzinfo=timezone.utc)
-
-        now = datetime.now(timezone.utc)
-
-        return now >= kd
-
-    except Exception as e:
-        print("PARSE ERROR:", e)
-        return False
-
-# ================= SAFE ASYNC BRIDGE =================
-def run_async(app, coro):
-    asyncio.run_coroutine_threadsafe(coro, app.loop)
-
-# ================= WORKER LOOP (SAFE) =================
-def kick_worker_loop(app):
+# ================= WORKER CHECK SHEET =================
+def sheet_worker():
     while True:
         try:
-            r = requests.get(APPS_SCRIPT_URL, timeout=60)
-            data = r.json().get("data", [])
+            r = requests.get(APPS_SCRIPT_URL, timeout=30)
+            rows = r.json().get("data", [])
+
+            now = datetime.now()
 
             print("━━━━━━━━━━━━━━")
-            print("CHECKING SHEET DATA...")
+            print("CHECKING SHEET...")
 
-            for u in data:
-                user_id = u.get("userId")
-                kick_date = u.get("kickDate")
-                out = u.get("out")
+            for i, row in enumerate(rows):
 
-                if not user_id:
-                    continue
+                user_id = row.get("userId")
+                kick_date = parse_kick_date(row.get("kickDate"))
 
-                if out == "✔":
+                if not user_id or not kick_date:
                     continue
 
                 print("CHECK:", user_id, kick_date)
 
-                if is_expired(kick_date):
+                # kalau sudah lewat waktu
+                if now >= kick_date:
+
+                    print("🔥 EXPIRED:", user_id)
+
+                    # tunggu 2 menit sebelum update sheet
+                    time.sleep(120)
 
                     try:
-                        print("🔥 AUTO KICK:", user_id)
+                        # update Google Sheet via Apps Script (WAJIB endpoint update)
+                        requests.post(APPS_SCRIPT_URL, json={
+                            "action": "expire_update",
+                            "userId": user_id
+                        }, timeout=30)
 
-                        # BAN USER
-                        run_async(
-                            app,
-                            app.bot.ban_chat_member(
-                                chat_id=TARGET_GROUP,
-                                user_id=int(user_id)
-                            )
-                        )
-
-                        # FOLLOW UP MESSAGE
-                        run_async(
-                            app,
-                            app.bot.send_message(
-                                chat_id=int(user_id),
-                                text=follow_up_message()
-                            )
-                        )
-
-                        print("🔥 KICKED:", user_id)
+                        print("✔ UPDATED SHEET:", user_id)
 
                     except Exception as e:
-                        print("❌ KICK ERROR:", e)
+                        print("❌ UPDATE ERROR:", e)
 
         except Exception as e:
-            print("❌ LOOP ERROR:", e)
+            print("❌ WORKER ERROR:", e)
 
         time.sleep(60)
 
-# ================= MAIN (ORDER FIXED) =================
+# ================= MAIN =================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     print("BOT RUNNING")
 
-    # ORDER HANDLER (IMPORTANT)
-    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Chat(MONITOR_GROUP), handle_group))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, catch_all))
+    app.add_handler(CommandHandler("start", start))
 
-    # WORKER THREAD
-    threading.Thread(target=kick_worker_loop, args=(app), daemon=True).start()
+    threading.Thread(target=sheet_worker, daemon=True).start()
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
