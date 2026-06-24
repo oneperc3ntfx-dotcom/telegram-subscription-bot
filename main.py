@@ -4,7 +4,13 @@ import time
 import threading
 import requests
 from telegram import Update, Bot
-from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    MessageHandler,
+    CommandHandler,
+    ContextTypes,
+    filters
+)
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -49,21 +55,27 @@ def send_to_sheet(data):
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= HANDLE GROUP =================
+# ================= HANDLE ALL UPDATES =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("🔔 UPDATE RECEIVED")
 
-    msg = update.message or update.effective_message
+    msg = (
+        update.message
+        or update.edited_message
+        or update.channel_post
+        or update.edited_channel_post
+    )
+
     if not msg:
         return
 
-    chat_id = msg.chat_id
     text = msg.text or msg.caption or ""
+    chat_id = msg.chat.id
 
     print("━━━━━━━━━━━━━━")
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
+    # hanya monitor group / channel tertentu
     if chat_id != MONITOR_GROUP:
         return
 
@@ -75,6 +87,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data["userId"]:
         return
 
+    # anti duplicate
     if data["userId"] in seen_users:
         return
 
@@ -84,7 +97,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     send_to_sheet(data)
 
-# ================= START COMMAND =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Klik untuk lanjut:\n{REDIRECT_LINK}"
@@ -128,8 +141,8 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # 🔥 IMPORTANT: capture ALL group messages
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS, handle_group))
+    # 🔥 FIX UTAMA: tangkap SEMUA update penting
+    app.add_handler(MessageHandler(filters.ALL, handle_group))
 
     app.add_handler(CommandHandler("start", start))
 
