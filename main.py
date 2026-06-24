@@ -33,12 +33,12 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND TO SHEET:", data)
+        print("📤 SEND:", data)
 
         r = requests.post(
             APPS_SCRIPT_URL,
             json=data,
-            timeout=10
+            timeout=30   # IMPORTANT
         )
 
         print("📊 STATUS:", r.status_code)
@@ -49,32 +49,28 @@ def send_to_sheet(data):
 
 # ================= HANDLER =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        msg = update.effective_message
-        if not msg:
-            return
+    msg = update.effective_message
+    if not msg:
+        return
 
-        chat_id = update.effective_chat.id
-        text = msg.text or ""
+    chat_id = update.effective_chat.id
+    text = msg.text or ""
 
-        print("━━━━━━━━━━━━━━━━")
-        print("CHAT ID:", chat_id)
-        print("TEXT:\n", text)
+    print("━━━━━━━━━━━━━━")
+    print("CHAT ID:", chat_id)
+    print("TEXT:\n", text)
 
-        if chat_id != MONITOR_GROUP:
-            return
+    if chat_id != MONITOR_GROUP:
+        return
 
-        if "SUCCESS JOIN TO GROUP" not in text:
-            return
+    if "SUCCESS JOIN TO GROUP" not in text:
+        return
 
-        data = parse_message(text)
+    data = parse_message(text)
 
-        print("SAVED:", data["userId"])
+    print("SAVED:", data["userId"])
 
-        send_to_sheet(data)
-
-    except Exception as e:
-        print("ERROR:", e)
+    send_to_sheet(data)
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,31 +84,30 @@ def kick_worker():
 
     while True:
         try:
-            r = requests.get(APPS_SCRIPT_URL, timeout=10)
+            r = requests.get(APPS_SCRIPT_URL, timeout=30)
 
             try:
-                result = r.json()
-                data = result.get("data", [])
+                data = r.json().get("data", [])
             except:
-                print("❌ INVALID JSON")
+                print("INVALID JSON")
                 data = []
 
             today = time.strftime("%Y-%m-%d")
 
-            for row in data:
-                if row.get("kickDate") == today and row.get("out") != "✔":
+            for u in data:
+                if u.get("kickDate") == today and u.get("out") != "✔":
                     try:
                         bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
-                            user_id=int(row["userId"])
+                            user_id=int(u["userId"])
                         )
 
                         bot.send_message(
-                            chat_id=row["userId"],
-                            text=f"Langganan kamu sudah habis.\nStart ulang: {REDIRECT_LINK}"
+                            chat_id=u["userId"],
+                            text=f"Langganan habis.\nStart lagi: {REDIRECT_LINK}"
                         )
 
-                        print("KICKED:", row["userId"])
+                        print("KICKED:", u["userId"])
 
                     except Exception as e:
                         print("KICK ERROR:", e)
