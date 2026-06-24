@@ -6,7 +6,13 @@ import threading
 from datetime import datetime, timezone
 
 from telegram import Update
-from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
+from telegram.ext import (
+    Application,
+    MessageHandler,
+    CommandHandler,
+    ContextTypes,
+    filters
+)
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -19,7 +25,7 @@ REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 seen_users = set()
 
-# ================= PARSER =================
+# ================= MESSAGE PARSER =================
 def parse_message(text):
     username = re.search(r"Username:\s*(.+)", text)
     user_id = re.search(r"User ID:\s*(\d+)", text)
@@ -44,16 +50,16 @@ def send_to_sheet(data):
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= REDIRECT MESSAGE =================
+# ================= FOLLOW UP MESSAGE =================
 def follow_up_message():
     return (
         "🚨 AKSES ANDA SUDAH BERAKHIR / TIDAK VALID\n\n"
-        "👉 Untuk melanjutkan akses silakan klik link berikut:\n"
+        "👉 Silakan lanjutkan akses di link berikut:\n"
         f"{REDIRECT_LINK}\n\n"
         "⚡ Sistem akan otomatis memproses setelah pembayaran."
     )
 
-# ================= HANDLE GROUP (JOIN ONLY) =================
+# ================= HANDLE GROUP (MONITOR ONLY) =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = update.message or update.channel_post or update.edited_message
@@ -62,10 +68,6 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = msg.text or msg.caption or ""
     chat_id = msg.chat.id
-
-    print("━━━━━━━━━━━━━━")
-    print("CHAT ID:", chat_id)
-    print("TEXT:\n", text)
 
     if chat_id != MONITOR_GROUP:
         return
@@ -83,10 +85,14 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
+    print("━━━━━━━━━━━━━━")
+    print("CHAT ID:", chat_id)
+    print("JOIN DETECTED:", data)
+
     # SAVE TO SHEET
     send_to_sheet(data)
 
-    # UNBAN (ALLOW REJOIN / RENEW)
+    # UNBAN FOR RENEW SYSTEM
     try:
         await context.bot.unban_chat_member(
             chat_id=TARGET_GROUP,
@@ -97,26 +103,16 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("UNBAN ERROR:", e)
 
-# ================= START COMMAND =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text(
-            follow_up_message()
-        )
-    except:
-        pass
+    await update.message.reply_text(follow_up_message())
 
-# ================= ALL OTHER CHAT (SPAM / RANDOM MESSAGE) =================
+# ================= CHAT RANDOM / DM =================
 async def catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if update.message:
-            await update.message.reply_text(
-                follow_up_message()
-            )
-    except:
-        pass
+    if update.message:
+        await update.message.reply_text(follow_up_message())
 
-# ================= CHECK EXPIRED =================
+# ================= EXPIRY CHECK =================
 def is_expired(kick_date_str):
     try:
         if not kick_date_str:
@@ -127,10 +123,7 @@ def is_expired(kick_date_str):
                 kick_date_str.replace("Z", "+00:00")
             )
         except:
-            kd = datetime.strptime(
-                kick_date_str,
-                "%Y-%m-%d %H:%M"
-            )
+            kd = datetime.strptime(kick_date_str, "%Y-%m-%d %H:%M")
             kd = kd.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
@@ -169,21 +162,17 @@ def kick_worker_loop(app):
                     try:
                         print("🔥 AUTO KICK:", user_id)
 
-                        # BAN USER
                         app.bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
                             user_id=int(user_id)
                         )
 
-                        # FOLLOW UP MESSAGE AFTER KICK
                         app.bot.send_message(
                             chat_id=int(user_id),
                             text=follow_up_message()
                         )
 
                         print("🔥 KICKED:", user_id)
-
-                        # NOTE: idealnya update sheet out = ✔ (optional upgrade)
 
                     except Exception as e:
                         print("❌ KICK ERROR:", e)
@@ -193,16 +182,16 @@ def kick_worker_loop(app):
 
         time.sleep(60)
 
-# ================= MAIN =================
+# ================= MAIN (FIXED ROUTING ORDER) =================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # handlers
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, catch_all))
-    app.add_handler(MessageHandler(filters.ALL, handle_group))
-    app.add_handler(CommandHandler("start", start))
-
     print("BOT RUNNING")
+
+    # ORDER WAJIB BENAR (INI YANG FIX BUG KAMU)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Chat(MONITOR_GROUP), handle_group))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, catch_all))
 
     threading.Thread(target=kick_worker_loop, args=(app,), daemon=True).start()
 
