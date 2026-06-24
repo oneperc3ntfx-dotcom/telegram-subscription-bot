@@ -44,7 +44,16 @@ def send_to_sheet(data):
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= HANDLE GROUP =================
+# ================= REDIRECT MESSAGE =================
+def follow_up_message():
+    return (
+        "🚨 AKSES ANDA SUDAH BERAKHIR / TIDAK VALID\n\n"
+        "👉 Untuk melanjutkan akses silakan klik link berikut:\n"
+        f"{REDIRECT_LINK}\n\n"
+        "⚡ Sistem akan otomatis memproses setelah pembayaran."
+    )
+
+# ================= HANDLE GROUP (JOIN ONLY) =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = update.message or update.channel_post or update.edited_message
@@ -74,10 +83,10 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
-    # kirim ke sheet
+    # SAVE TO SHEET
     send_to_sheet(data)
 
-    # ================= UNBAN (IMPORTANT FOR RENEW) =================
+    # UNBAN (ALLOW REJOIN / RENEW)
     try:
         await context.bot.unban_chat_member(
             chat_id=TARGET_GROUP,
@@ -88,32 +97,26 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("UNBAN ERROR:", e)
 
-    # ================= INSTANT KICK (optional logic lama) =================
-    try:
-        print("🔥 INSTANT KICK CHECK:", data["userId"])
-
-        await context.bot.ban_chat_member(
-            chat_id=TARGET_GROUP,
-            user_id=int(data["userId"])
-        )
-
-        await context.bot.send_message(
-            chat_id=int(data["userId"]),
-            text=f"❌ Kamu sudah dikeluarkan dari grup.\n👉 Start lagi: {REDIRECT_LINK}"
-        )
-
-        print("🔥 INSTANT KICKED:", data["userId"])
-
-    except Exception as e:
-        print("❌ KICK ERROR:", e)
-
-# ================= START =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"🚀 Bot Active\n{REDIRECT_LINK}"
-    )
+    try:
+        await update.message.reply_text(
+            follow_up_message()
+        )
+    except:
+        pass
 
-# ================= EXPIRY CHECK =================
+# ================= ALL OTHER CHAT (SPAM / RANDOM MESSAGE) =================
+async def catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if update.message:
+            await update.message.reply_text(
+                follow_up_message()
+            )
+    except:
+        pass
+
+# ================= CHECK EXPIRED =================
 def is_expired(kick_date_str):
     try:
         if not kick_date_str:
@@ -153,34 +156,34 @@ def kick_worker_loop(app):
                 kick_date = u.get("kickDate")
                 out = u.get("out")
 
-                print("CHECK:", user_id, kick_date)
-
                 if not user_id:
                     continue
 
                 if out == "✔":
                     continue
 
+                print("CHECK:", user_id, kick_date)
+
                 if is_expired(kick_date):
 
                     try:
                         print("🔥 AUTO KICK:", user_id)
 
-                        res = app.bot.ban_chat_member(
+                        # BAN USER
+                        app.bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
                             user_id=int(user_id)
                         )
 
-                        print("TELEGRAM RESULT:", res)
-
+                        # FOLLOW UP MESSAGE AFTER KICK
                         app.bot.send_message(
                             chat_id=int(user_id),
-                            text=f"❌ Membership kamu sudah habis.\n👉 Start lagi: {REDIRECT_LINK}"
+                            text=follow_up_message()
                         )
 
                         print("🔥 KICKED:", user_id)
 
-                        # NOTE: idealnya update sheet out = ✔ di sini (opsional upgrade)
+                        # NOTE: idealnya update sheet out = ✔ (optional upgrade)
 
                     except Exception as e:
                         print("❌ KICK ERROR:", e)
@@ -194,6 +197,8 @@ def kick_worker_loop(app):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # handlers
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, catch_all))
     app.add_handler(MessageHandler(filters.ALL, handle_group))
     app.add_handler(CommandHandler("start", start))
 
