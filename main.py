@@ -14,11 +14,9 @@ APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 MONITOR_GROUP = -1004311537613
 TARGET_GROUP = -1002510797113
 
-# 🔥 LINK BOT AI TOOL SIGNAL (START)
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 seen_users = set()
-
 bot = Bot(token=BOT_TOKEN)
 
 # ================= PARSER =================
@@ -40,24 +38,38 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND TO SHEET:", data)
-
+        print("📤 SEND:", data)
         r = requests.post(APPS_SCRIPT_URL, json=data, timeout=30)
-
         print("📊 RESPONSE:", r.status_code, r.text)
-
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= ADMIN CHECK =================
-async def is_admin(update: Update, user_id: int):
+# ================= SAFE PARSE KICK DATE =================
+def parse_kick_date(kick_date):
     try:
-        member = await update.effective_chat.get_member(user_id)
-        return member.status in ["administrator", "creator"]
-    except:
+        if not kick_date:
+            return None
+
+        kick_date = str(kick_date).strip()
+
+        # buang detik kalau ada
+        if len(kick_date) > 16:
+            kick_date = kick_date[:16]
+
+        return datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
+
+    except Exception as e:
+        print("❌ PARSE ERROR:", kick_date, e)
+        return None
+
+def is_expired(kick_date):
+    dt = parse_kick_date(kick_date)
+    if not dt:
         return False
 
-# ================= HANDLE GROUP / CHANNEL =================
+    return datetime.now() >= dt
+
+# ================= HANDLE GROUP =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
@@ -78,22 +90,9 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
-    # hanya monitor group ini
     if chat_id != MONITOR_GROUP:
         return
 
-    # ================= ADMIN CHECK =================
-    if user_id:
-        admin = await is_admin(update, user_id)
-
-        if not admin:
-            # 🚀 redirect ke bot AI toolsignal
-            await update.effective_chat.send_message(
-                f"⚠️ Kamu bukan admin.\n\n👉 Klik untuk lanjut:\n{REDIRECT_LINK}"
-            )
-            return
-
-    # ================= FILTER MESSAGE =================
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -108,28 +107,15 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     seen_users.add(data["userId"])
 
     print("SAVED:", data["userId"])
-
     send_to_sheet(data)
 
 # ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Welcome!\nKlik untuk lanjut:\n{REDIRECT_LINK}"
+        f"🚀 Start Bot AI Toolsignal:\n{REDIRECT_LINK}"
     )
 
-# ================= KICK SYSTEM =================
-def is_expired(kick_date):
-    if not kick_date:
-        return False
-
-    try:
-        now = datetime.now()
-        dt = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
-        return now >= dt
-    except:
-        return False
-
-
+# ================= KICK WORKER =================
 def kick_worker():
     bot = Bot(token=BOT_TOKEN)
 
@@ -146,6 +132,8 @@ def kick_worker():
                 kick_date = u.get("kickDate")
                 out = u.get("out")
 
+                print("CHECK:", user_id, kick_date, out)
+
                 if not user_id:
                     continue
 
@@ -161,7 +149,7 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=user_id,
-                            text=f"❌ Membership kamu habis.\n👉 Start ulang: {REDIRECT_LINK}"
+                            text=f"❌ Membership habis.\n👉 Start: {REDIRECT_LINK}"
                         )
 
                         requests.post(APPS_SCRIPT_URL, json={
@@ -169,13 +157,13 @@ def kick_worker():
                             "userId": user_id
                         }, timeout=10)
 
-                        print("KICKED:", user_id)
+                        print("🔥 KICKED:", user_id)
 
                     except Exception as e:
-                        print("KICK ERROR:", e)
+                        print("❌ KICK ERROR:", e)
 
         except Exception as e:
-            print("KICK LOOP ERROR:", e)
+            print("❌ KICK LOOP ERROR:", e)
 
         time.sleep(60)
 
@@ -183,9 +171,7 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # monitor semua update (group + channel + bot message)
     app.add_handler(MessageHandler(filters.ALL, handle_group))
-
     app.add_handler(CommandHandler("start", start))
 
     print("BOT RUNNING")
@@ -193,7 +179,6 @@ def run():
     threading.Thread(target=kick_worker, daemon=True).start()
 
     app.run_polling(drop_pending_updates=True)
-
 
 if __name__ == "__main__":
     run()
