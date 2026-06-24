@@ -122,7 +122,7 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT, handle_group))
+    app.add_handler(MessageHandler(filters.ALL, handle_group))
     app.add_handler(CommandHandler("start", start))
 
     print("BOT RUNNING")
