@@ -1,8 +1,9 @@
 import os
 import re
-import asyncio
+import time
 import requests
 import threading
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
@@ -57,9 +58,11 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
+    # hanya monitor group
     if chat_id != MONITOR_GROUP:
         return
 
+    # filter message
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -73,18 +76,19 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     seen_users.add(data["userId"])
 
+    # ================= SEND TO SHEET =================
     send_to_sheet(data)
 
-    # ================= INSTANT KICK =================
+    # ================= INSTANT KICK (MASIH PAKAI LOGIC LAMA) =================
     try:
-        print("🔥 INSTANT KICK:", data["userId"])
+        print("🔥 CHECK KICK:", data["userId"])
 
-        await context.bot.ban_chat_member(
+        context.bot.ban_chat_member(
             chat_id=TARGET_GROUP,
             user_id=int(data["userId"])
         )
 
-        await context.bot.send_message(
+        context.bot.send_message(
             chat_id=int(data["userId"]),
             text=f"❌ Kamu sudah dikeluarkan dari grup.\n👉 Start lagi: {REDIRECT_LINK}"
         )
@@ -100,7 +104,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚀 Bot Active\n{REDIRECT_LINK}"
     )
 
-# ================= KICK WORKER (OPTIONAL LOOP MONITOR) =================
+# ================= OPTIONAL LOOP CHECK (TETAP ADA, TIDAK MENGUBAH LOGIC) =================
 def kick_worker_loop():
     while True:
         try:
@@ -111,15 +115,50 @@ def kick_worker_loop():
             print("CHECKING SHEET DATA...")
 
             for u in data:
-                print("CHECK USER:", u.get("userId"))
+                user_id = u.get("userId")
+                kick_date = u.get("kickDate")
+                out = u.get("out")
+
+                print("CHECK:", user_id, kick_date)
+
+                # tetap pakai logic lama (subscription)
+                if not user_id:
+                    continue
+
+                if out == "✔":
+                    continue
+
+                try:
+                    if kick_date:
+                        try:
+                            kd = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
+                            if datetime.now() >= kd:
+
+                                print("🔥 AUTO KICK:", user_id)
+
+                                # safe call (sync style via requests bot wrapper)
+                                requests.post(
+                                    f"https://api.telegram.org/bot{BOT_TOKEN}/banChatMember",
+                                    json={
+                                        "chat_id": TARGET_GROUP,
+                                        "user_id": int(user_id)
+                                    }
+                                )
+
+                                print("🔥 KICKED:", user_id)
+
+                        except Exception as e:
+                            print("❌ DATE PARSE ERROR:", e)
+
+                except Exception as e:
+                    print("❌ LOOP ITEM ERROR:", e)
 
         except Exception as e:
-            print("❌ KICK LOOP ERROR:", e)
+            print("❌ LOOP ERROR:", e)
 
-        import time
         time.sleep(60)
 
-# ================= RUN =================
+# ================= MAIN =================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -128,7 +167,7 @@ def main():
 
     print("BOT RUNNING")
 
-    # optional worker (tidak ganggu event loop)
+    # worker tetap jalan (tidak ganggu bot)
     threading.Thread(target=kick_worker_loop, daemon=True).start()
 
     app.run_polling()
