@@ -3,7 +3,7 @@ export const CONFIG = {
 
   ADMINS: [1305881282],
 
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbw7JJRafyw9DQQU48yuZXERc52xakGnxaH5wepo_ipimlq_DlnDAQFjhmG9GnocDgeO/exec",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzSFszNzMqPN3V4ZhImDB2SdoQ7tkCUJhWugDs2Ko5TmOdpd0pFUAPdm-uqZqZM5wBy/exec",
 
   BOT_LINK: "https://t.me/AITOOLSIGNAL_BOT?start=signal"
 };
