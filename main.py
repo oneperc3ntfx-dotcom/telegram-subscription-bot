@@ -10,7 +10,7 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 
-MONITOR_GROUP = -1004415837135
+MONITOR_GROUP = -1004311537613
 TARGET_GROUP = -1002510797113
 
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
