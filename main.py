@@ -2,6 +2,8 @@ import os
 import re
 import asyncio
 import requests
+
+from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 
 # ================= CONFIG =================
@@ -58,7 +60,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id != MONITOR_GROUP:
         return
 
-    # hanya message tertentu
+    # filter pesan
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -75,7 +77,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # kirim ke sheet
     send_to_sheet(data)
 
-    # =================🔥 INSTANT KICK =================
+    # ================= INSTANT KICK =================
     try:
         print("🔥 INSTANT KICK:", data["userId"])
 
@@ -100,7 +102,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🚀 Start Bot:\n{REDIRECT_LINK}"
     )
 
-# ================= RUN =================
+# ================= MAIN =================
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
