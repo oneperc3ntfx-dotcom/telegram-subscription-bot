@@ -11,13 +11,15 @@ from telegram.ext import Application, MessageHandler, CommandHandler, ContextTyp
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 
-# 📌 GROUP ID (SUDAH FIX, JANGAN DIUBAH)
-MONITOR_GROUP = -1004311537613   # <- tempat baca SUCCESS JOIN
-TARGET_GROUP = -1002510797113    # <- tempat kick member
+MONITOR_GROUP = -1004311537613
+TARGET_GROUP = -1002510797113
 
+# 🔥 LINK BOT AI TOOL SIGNAL (START)
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 seen_users = set()
+
+bot = Bot(token=BOT_TOKEN)
 
 # ================= PARSER =================
 def parse_message(text):
@@ -38,26 +40,30 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND:", data)
+        print("📤 SEND TO SHEET:", data)
 
-        r = requests.post(
-            APPS_SCRIPT_URL,
-            json=data,
-            timeout=30
-        )
+        r = requests.post(APPS_SCRIPT_URL, json=data, timeout=30)
 
         print("📊 RESPONSE:", r.status_code, r.text)
 
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
+# ================= ADMIN CHECK =================
+async def is_admin(update: Update, user_id: int):
+    try:
+        member = await update.effective_chat.get_member(user_id)
+        return member.status in ["administrator", "creator"]
+    except:
+        return False
+
 # ================= HANDLE GROUP / CHANNEL =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
         update.message
-        or update.edited_message
         or update.channel_post
+        or update.edited_message
         or update.edited_channel_post
     )
 
@@ -66,6 +72,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = msg.text or msg.caption or ""
     chat_id = msg.chat.id
+    user_id = msg.from_user.id if msg.from_user else None
 
     print("━━━━━━━━━━━━━━")
     print("CHAT ID:", chat_id)
@@ -75,6 +82,18 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id != MONITOR_GROUP:
         return
 
+    # ================= ADMIN CHECK =================
+    if user_id:
+        admin = await is_admin(update, user_id)
+
+        if not admin:
+            # 🚀 redirect ke bot AI toolsignal
+            await update.effective_chat.send_message(
+                f"⚠️ Kamu bukan admin.\n\n👉 Klik untuk lanjut:\n{REDIRECT_LINK}"
+            )
+            return
+
+    # ================= FILTER MESSAGE =================
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -95,23 +114,18 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"Klik untuk lanjut:\n{REDIRECT_LINK}"
+        f"🚀 Welcome!\nKlik untuk lanjut:\n{REDIRECT_LINK}"
     )
 
-# ================= KICK WORKER =================
+# ================= KICK SYSTEM =================
 def is_expired(kick_date):
     if not kick_date:
         return False
 
-    now = datetime.now()
-
     try:
-        if ":" in kick_date:
-            dt = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
-            return now >= dt
-        else:
-            dt = datetime.strptime(kick_date, "%Y-%m-%d")
-            return now.date() >= dt.date()
+        now = datetime.now()
+        dt = datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
+        return now >= dt
     except:
         return False
 
@@ -147,10 +161,9 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=user_id,
-                            text=f"❌ Langganan kamu sudah habis.\n🔗 Start: {REDIRECT_LINK}"
+                            text=f"❌ Membership kamu habis.\n👉 Start ulang: {REDIRECT_LINK}"
                         )
 
-                        # optional mark out
                         requests.post(APPS_SCRIPT_URL, json={
                             "action": "markOut",
                             "userId": user_id
@@ -170,7 +183,7 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # 📌 MONITOR SEMUA UPDATE (GROUP + CHANNEL + BOT MSG)
+    # monitor semua update (group + channel + bot message)
     app.add_handler(MessageHandler(filters.ALL, handle_group))
 
     app.add_handler(CommandHandler("start", start))
