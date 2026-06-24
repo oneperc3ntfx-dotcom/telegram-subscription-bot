@@ -2,6 +2,7 @@ import os
 import re
 import time
 import threading
+import json
 import requests
 from telegram import Update, Bot
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
@@ -17,40 +18,65 @@ REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 # ================= PARSER =================
 def parse_message(text):
+    username = re.search(r"Username:\s*(.+)", text)
+    user_id = re.search(r"User ID:\s*(\d+)", text)
+    paket = re.search(r"Paket:\s*(.+)", text)
+    referral = re.search(r"Referral:\s*(.+)", text)
+
     return {
-        "username": re.search(r"Username:\s(@\w+)", text).group(1) if re.search(r"Username:", text) else "",
-        "userId": re.search(r"User ID:\s(\d+)", text).group(1) if re.search(r"User ID:", text) else "",
-        "paket": re.search(r"Paket:\s(\d+)", text).group(1) if re.search(r"Paket:", text) else "1",
-        "referral": re.search(r"Referral:\s(.+)", text).group(1) if re.search(r"Referral:", text) else ""
+        "username": username.group(1).strip() if username else "",
+        "userId": user_id.group(1).strip() if user_id else "",
+        "paket": paket.group(1).strip() if paket else "1",
+        "referral": referral.group(1).strip() if referral else ""
     }
 
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        requests.post(APPS_SCRIPT_URL, json=data, timeout=10)
-    except Exception as e:
-        print("SHEET ERROR:", e)
+        print("📤 SEND TO SHEET:", data)
 
-# ================= GROUP HANDLER =================
+        r = requests.post(
+            APPS_SCRIPT_URL,
+            json=data,
+            timeout=10
+        )
+
+        print("📊 STATUS:", r.status_code)
+        print("📊 RESPONSE:", r.text)
+
+    except Exception as e:
+        print("❌ SHEET ERROR:", e)
+
+# ================= HANDLER =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        if update.message.chat_id != MONITOR_GROUP:
+        msg = update.effective_message
+        if not msg:
             return
 
-        text = update.message.text or ""
+        chat_id = update.effective_chat.id
+        text = msg.text or ""
+
+        print("━━━━━━━━━━━━━━━━")
+        print("CHAT ID:", chat_id)
+        print("TEXT:\n", text)
+
+        if chat_id != MONITOR_GROUP:
+            return
 
         if "SUCCESS JOIN TO GROUP" not in text:
             return
 
         data = parse_message(text)
-        send_to_sheet(data)
 
         print("SAVED:", data["userId"])
 
-    except Exception as e:
-        print("HANDLE ERROR:", e)
+        send_to_sheet(data)
 
-# ================= START COMMAND =================
+    except Exception as e:
+        print("ERROR:", e)
+
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Klik untuk lanjut:\n{REDIRECT_LINK}"
@@ -68,8 +94,7 @@ def kick_worker():
                 result = r.json()
                 data = result.get("data", [])
             except:
-                print("❌ RAW RESPONSE:")
-                print(r.text[:200])
+                print("❌ INVALID JSON")
                 data = []
 
             today = time.strftime("%Y-%m-%d")
@@ -84,7 +109,7 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=row["userId"],
-                            text=f"Langganan kamu sudah habis.\nUpgrade di sini:\n{REDIRECT_LINK}"
+                            text=f"Langganan kamu sudah habis.\nStart ulang: {REDIRECT_LINK}"
                         )
 
                         print("KICKED:", row["userId"])
@@ -101,7 +126,7 @@ def kick_worker():
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group))
+    app.add_handler(MessageHandler(filters.TEXT, handle_group))
     app.add_handler(CommandHandler("start", start))
 
     print("BOT RUNNING")
