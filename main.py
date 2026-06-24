@@ -3,14 +3,8 @@ import re
 import time
 import threading
 import requests
-from telegram import Update
-from telegram.ext import (
-    Application,
-    MessageHandler,
-    CommandHandler,
-    filters,
-    ContextTypes
-)
+from telegram import Update, Bot
+from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -40,12 +34,10 @@ def send_to_sheet(data):
 # ================= GROUP HANDLER =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        chat_id = update.message.chat_id
-        text = update.message.text or ""
-
-        # hanya group monitor
-        if chat_id != MONITOR_GROUP:
+        if update.message.chat_id != MONITOR_GROUP:
             return
+
+        text = update.message.text or ""
 
         if "SUCCESS JOIN TO GROUP" not in text:
             return
@@ -58,7 +50,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print("HANDLE ERROR:", e)
 
-# ================= START COMMAND (REDIRECT BOT) =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Klik untuk lanjut:\n{REDIRECT_LINK}"
@@ -66,43 +58,46 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= KICK WORKER =================
 def kick_worker():
-    from telegram import Bot
     bot = Bot(token=BOT_TOKEN)
 
     while True:
         try:
-            r = requests.get(APPS_SCRIPT_URL + "?action=get", timeout=10)
-            data = r.json()
+            r = requests.get(APPS_SCRIPT_URL, timeout=10)
+
+            try:
+                result = r.json()
+                data = result.get("data", [])
+            except:
+                print("❌ RAW RESPONSE:")
+                print(r.text[:200])
+                data = []
 
             today = time.strftime("%Y-%m-%d")
 
             for row in data:
                 if row.get("kickDate") == today and row.get("out") != "✔":
-                    user_id = row.get("userId")
-
                     try:
-                        # kick user dari TARGET GROUP
                         bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
-                            user_id=user_id
+                            user_id=int(row["userId"])
                         )
 
                         bot.send_message(
-                            chat_id=user_id,
-                            text=f"Langganan Kamu Telah Selesai.\nSilahkan Upgrade:\n{REDIRECT_LINK}"
+                            chat_id=row["userId"],
+                            text=f"Langganan kamu sudah habis.\nUpgrade di sini:\n{REDIRECT_LINK}"
                         )
 
-                        print("KICKED:", user_id)
+                        print("KICKED:", row["userId"])
 
                     except Exception as e:
                         print("KICK ERROR:", e)
 
         except Exception as e:
-            print("KICK WORKER ERROR:", e)
+            print("KICK LOOP ERROR:", e)
 
-        time.sleep(3600)  # tiap 1 jam
+        time.sleep(3600)
 
-# ================= RUN BOT =================
+# ================= RUN =================
 def run():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -111,7 +106,6 @@ def run():
 
     print("BOT RUNNING")
 
-    # start kick thread
     threading.Thread(target=kick_worker, daemon=True).start()
 
     app.run_polling(drop_pending_updates=True)
