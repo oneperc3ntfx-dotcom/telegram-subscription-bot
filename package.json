@@ -7,9 +7,7 @@
     "start": "node bot.js"
   },
   "dependencies": {
-    "dayjs": "^1.11.10",
-    "dotenv": "^16.3.1",
-    "googleapis": "^128.0.0",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "dayjs": "^1.11.10"
   }
 }
