@@ -1,77 +1,63 @@
-import time
+import asyncio
 import requests
 from telegram import Bot
+from datetime import datetime, timezone
 
-# ================= CONFIG =================
-BOT_TOKEN = "ISI_DI_ENV"  # atau os.getenv kalau digabung
-APPS_SCRIPT_URL = "ISI_DI_ENV"
+async def kick_worker_async():
+    bot = Bot(token=BOT_TOKEN)
 
-TARGET_GROUP = -1002510797113
-REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
-
-# ================= INIT BOT =================
-bot = Bot(token=BOT_TOKEN)
-
-# ================= GET DATA =================
-def fetch_data():
-    try:
-        r = requests.get(APPS_SCRIPT_URL, timeout=10)
-
-        print("📡 RAW RESPONSE:", r.text[:300])
-
-        data = r.json()
-        return data.get("data", [])
-
-    except Exception as e:
-        print("❌ FETCH ERROR:", e)
-        return []
-
-# ================= KICK MEMBER =================
-def kick_member(user_id):
-    try:
-        print("🚨 KICKING USER:", user_id)
-
-        bot.ban_chat_member(
-            chat_id=TARGET_GROUP,
-            user_id=int(user_id)
-        )
-
-        bot.send_message(
-            chat_id=user_id,
-            text=(
-                "⚠️ Langganan kamu sudah habis.\n\n"
-                "Silakan upgrade kembali di:\n"
-                f"{REDIRECT_LINK}"
-            )
-        )
-
-        print("✅ KICK SUCCESS:", user_id)
-
-    except Exception as e:
-        print("❌ KICK ERROR:", e)
-
-# ================= WORKER LOOP =================
-def kick_worker():
     while True:
         try:
-            print("🔄 CHECKING EXPIRED USERS...")
+            r = requests.get(APPS_SCRIPT_URL, timeout=30)
+            data = r.json().get("data", [])
 
-            users = fetch_data()
+            print("━━━━━━━━━━━━━━")
+            print("CHECKING KICK DATA...")
 
-            today = time.strftime("%Y-%m-%d")
+            for u in data:
+                user_id = u.get("userId")
+                kick_date = u.get("kickDate")
+                out = u.get("out")
 
-            for u in users:
-                print("CHECK:", u)
+                print("CHECK:", user_id, kick_date, out)
 
-                if u.get("kickDate") == today and u.get("out") != "✔":
-                    kick_member(u["userId"])
+                if not user_id:
+                    continue
+
+                if out == "✔":
+                    continue
+
+                # ================= DEBUG =================
+                print("TARGET GROUP:", TARGET_GROUP)
+
+                # ================= CHECK EXPIRED =================
+                if is_expired(kick_date):
+
+                    try:
+                        print("🔥 TRY KICK:", user_id)
+
+                        await bot.ban_chat_member(
+                            chat_id=TARGET_GROUP,
+                            user_id=int(user_id)
+                        )
+
+                        await bot.send_message(
+                            chat_id=int(user_id),
+                            text=f"❌ Membership kamu sudah habis.\n👉 Start lagi: {REDIRECT_LINK}"
+                        )
+
+                        # mark out ke sheet
+                        requests.post(APPS_SCRIPT_URL, json={
+                            "action": "markOut",
+                            "userId": user_id
+                        }, timeout=10)
+
+                        print("🔥 KICKED SUCCESS:", user_id)
+
+                    except Exception as e:
+                        print("❌ KICK ERROR:", e)
 
         except Exception as e:
-            print("❌ WORKER ERROR:", e)
+            print("❌ KICK LOOP ERROR:", e)
 
-        time.sleep(3600)  # 1 jam sekali
-
-# ================= RUN =================
-if __name__ == "__main__":
-    print("🚀 KICK WORKER RUNNING")
-    kick_worker()
+        await asyncio.sleep(60)
