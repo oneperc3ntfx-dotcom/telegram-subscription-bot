@@ -1,16 +1,29 @@
 import time
-from datetime import datetime
+import requests
+from datetime import datetime, timezone
 
 def is_expired(kick_date_str):
     try:
         if not kick_date_str:
             return False
 
-        kick_date = datetime.strptime(kick_date_str, "%Y-%m-%d %H:%M")
-        now = datetime.now()
+        # FIX: support 2 format
+        try:
+            kick_date = datetime.fromisoformat(
+                kick_date_str.replace("Z", "+00:00")
+            )
+        except:
+            kick_date = datetime.strptime(
+                kick_date_str,
+                "%Y-%m-%d %H:%M"
+            )
 
-        return now >= kick_date
-    except:
+        now = datetime.now(timezone.utc)
+
+        return now >= kick_date.replace(tzinfo=timezone.utc)
+
+    except Exception as e:
+        print("PARSE ERROR:", e)
         return False
 
 
@@ -36,16 +49,17 @@ def kick_worker_loop(app):
                 if out == "✔":
                     continue
 
-                # 🔥 INI LOGIC KICK
                 if is_expired(kick_date):
 
                     try:
                         print("🔥 KICKING:", user_id)
 
-                        app.bot.ban_chat_member(
+                        res = app.bot.ban_chat_member(
                             chat_id=TARGET_GROUP,
                             user_id=int(user_id)
                         )
+
+                        print("TELEGRAM RESULT:", res)
 
                         app.bot.send_message(
                             chat_id=int(user_id),
