@@ -14,6 +14,7 @@ APPS_SCRIPT_URL = os.getenv("APPS_SCRIPT_URL")
 MONITOR_GROUP = -1004311537613
 TARGET_GROUP = -1002510797113
 
+# 🔥 BOT AI TOOL SIGNAL LINK
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
 seen_users = set()
@@ -38,38 +39,54 @@ def parse_message(text):
 # ================= SEND TO SHEET =================
 def send_to_sheet(data):
     try:
-        print("📤 SEND:", data)
+        print("📤 SEND TO SHEET:", data)
         r = requests.post(APPS_SCRIPT_URL, json=data, timeout=30)
         print("📊 RESPONSE:", r.status_code, r.text)
     except Exception as e:
         print("❌ SHEET ERROR:", e)
 
-# ================= SAFE PARSE KICK DATE =================
+# ================= SAFE KICK PARSER =================
 def parse_kick_date(kick_date):
     try:
         if not kick_date:
             return None
 
-        kick_date = str(kick_date).strip()
+        s = str(kick_date).strip()
 
-        # buang detik kalau ada
-        if len(kick_date) > 16:
-            kick_date = kick_date[:16]
+        # ================= ISO FORMAT (Google Sheet / API)
+        if "T" in s and "Z" in s:
+            s = s.replace("Z", "")
+            if "." in s:
+                s = s.split(".")[0]
+            return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
 
-        return datetime.strptime(kick_date, "%Y-%m-%d %H:%M")
+        # ================= yyyy-mm-dd hh:mm:ss
+        if len(s) > 16 and ":" in s:
+            s = s[:19]
+            try:
+                return datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+            except:
+                pass
+
+        # ================= yyyy-mm-dd hh:mm
+        if len(s) >= 16:
+            s = s[:16]
+            return datetime.strptime(s, "%Y-%m-%d %H:%M")
+
+        return None
 
     except Exception as e:
         print("❌ PARSE ERROR:", kick_date, e)
         return None
 
+
 def is_expired(kick_date):
     dt = parse_kick_date(kick_date)
     if not dt:
         return False
-
     return datetime.now() >= dt
 
-# ================= HANDLE GROUP =================
+# ================= HANDLE ALL CHAT =================
 async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = (
@@ -90,9 +107,30 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("CHAT ID:", chat_id)
     print("TEXT:\n", text)
 
+    # ================= PRIVATE CHAT REDIRECT =================
+    if msg.chat.type == "private":
+        await update.effective_chat.send_message(
+            f"🚀 Gunakan bot utama ini:\n{REDIRECT_LINK}"
+        )
+        return
+
+    # ================= ONLY MONITOR GROUP =================
     if chat_id != MONITOR_GROUP:
         return
 
+    # ================= ADMIN CHECK (OPTIONAL SAFE MODE) =================
+    if user_id:
+        try:
+            member = await update.effective_chat.get_member(user_id)
+            if member.status not in ["administrator", "creator"]:
+                await update.effective_chat.send_message(
+                    f"⚠️ Akses terbatas.\n👉 Start bot:\n{REDIRECT_LINK}"
+                )
+                return
+        except:
+            pass
+
+    # ================= FILTER MESSAGE =================
     if "SUCCESS JOIN TO GROUP" not in text:
         return
 
@@ -112,7 +150,7 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🚀 Start Bot AI Toolsignal:\n{REDIRECT_LINK}"
+        f"🚀 Start Bot AI ToolSignal:\n{REDIRECT_LINK}"
     )
 
 # ================= KICK WORKER =================
@@ -149,7 +187,7 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=user_id,
-                            text=f"❌ Membership habis.\n👉 Start: {REDIRECT_LINK}"
+                            text=f"❌ Membership kamu habis.\n👉 Start lagi: {REDIRECT_LINK}"
                         )
 
                         requests.post(APPS_SCRIPT_URL, json={
