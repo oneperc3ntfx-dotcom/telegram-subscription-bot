@@ -2,7 +2,6 @@ import os
 import re
 import time
 import threading
-import json
 import requests
 from telegram import Update, Bot
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
@@ -16,17 +15,22 @@ TARGET_GROUP = -1002510797113
 
 REDIRECT_LINK = "https://t.me/AITOOLSIGNAL_BOT?start"
 
+# ================= ANTI DUPLICATE =================
+seen_users = set()
+
 # ================= PARSER =================
 def parse_message(text):
     username = re.search(r"Username:\s*(.+)", text)
     user_id = re.search(r"User ID:\s*(\d+)", text)
     paket = re.search(r"Paket:\s*(.+)", text)
+    harga = re.search(r"Harga:\s*Rp\s*([\d,.]+)", text)
     referral = re.search(r"Referral:\s*(.+)", text)
 
     return {
         "username": username.group(1).strip() if username else "",
         "userId": user_id.group(1).strip() if user_id else "",
         "paket": paket.group(1).strip() if paket else "1",
+        "harga": harga.group(1).strip() if harga else "",
         "referral": referral.group(1).strip() if referral else ""
     }
 
@@ -38,7 +42,7 @@ def send_to_sheet(data):
         r = requests.post(
             APPS_SCRIPT_URL,
             json=data,
-            timeout=30   # IMPORTANT
+            timeout=30
         )
 
         print("📊 STATUS:", r.status_code)
@@ -56,10 +60,6 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = msg.text or ""
 
-    print("━━━━━━━━━━━━━━")
-    print("CHAT ID:", chat_id)
-    print("TEXT:\n", text)
-
     if chat_id != MONITOR_GROUP:
         return
 
@@ -68,11 +68,17 @@ async def handle_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = parse_message(text)
 
+    # 🔥 ANTI DUPLICATE
+    if data["userId"] in seen_users:
+        return
+
+    seen_users.add(data["userId"])
+
     print("SAVED:", data["userId"])
 
     send_to_sheet(data)
 
-# ================= START =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Klik untuk lanjut:\n{REDIRECT_LINK}"
@@ -85,12 +91,7 @@ def kick_worker():
     while True:
         try:
             r = requests.get(APPS_SCRIPT_URL, timeout=30)
-
-            try:
-                data = r.json().get("data", [])
-            except:
-                print("INVALID JSON")
-                data = []
+            data = r.json().get("data", [])
 
             today = time.strftime("%Y-%m-%d")
 
@@ -104,7 +105,7 @@ def kick_worker():
 
                         bot.send_message(
                             chat_id=u["userId"],
-                            text=f"Langganan habis.\nStart lagi: {REDIRECT_LINK}"
+                            text=f"Langganan kamu habis.\nStart ulang: {REDIRECT_LINK}"
                         )
 
                         print("KICKED:", u["userId"])
